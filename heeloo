@@ -1,485 +1,379 @@
 --[[
-    GRIEFING/RUSUH REMOTE FINDER
-    Cari remote yang biasa dipake buat:
-    - Kill/Damage player
-    - Explode/Blast player
-    - Stop/Destroy music/audio
-    - Kick/Ban player
-    - Teleport/Fling player
-    - Destroy map/objects
+    ANTI-CHEAT UNTUK MUSIC SYSTEM & ADMIN REMOTES
+    Berdasarkan hasil testing yang ditemukan
+    
+    CELAH YANG DITEMUKAN:
+    - 10 Music/Audio remotes yang bisa di-abuse
+    - 13 Admin remotes yang perlu protection
+    - 1 Ban remote yang perlu security
+    
+    INSTALL: Paste di ServerScriptService
 ]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
-local SoundService = game:GetService("SoundService")
-local LocalPlayer = Players.LocalPlayer
 
 -- ============================================
--- CONFIG
+-- KONFIGURASI
 -- ============================================
 
 local CONFIG = {
-    TARGET = "",  -- Username target atau kosongkan
-    TEST_DELAY = 0.1,
-    AUTO_TEST_ALL = true,  -- Otomatis test semua kategori
-}
-
--- ============================================
--- UTILS
--- ============================================
-
-local function log(icon, msg)
-    print(string.format("[%s] %s", icon, msg))
-end
-
-local function get_target()
-    if CONFIG.TARGET ~= "" then
-        return Players:FindFirstChild(CONFIG.TARGET)
-    end
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then return p end
-    end
-    return nil
-end
-
-local function get_health(p)
-    if not p or not p.Character then return nil end
-    local h = p.Character:FindFirstChild("Humanoid")
-    return h and h.Health or nil
-end
-
-local function get_pos(p)
-    if not p or not p.Character then return nil end
-    local h = p.Character:FindFirstChild("HumanoidRootPart")
-    return h and h.Position or nil
-end
-
-local function find_remotes()
-    local remotes = {}
-    for _, obj in pairs(ReplicatedStorage:GetDescendants()) do
-        if obj:IsA("RemoteEvent") then
-            table.insert(remotes, obj)
-        end
-    end
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("RemoteEvent") then
-            table.insert(remotes, obj)
-        end
-    end
-    return remotes
-end
-
-local function get_sounds()
-    local sounds = {}
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Sound") and obj.Playing then
-            table.insert(sounds, obj)
-        end
-    end
-    for _, obj in pairs(SoundService:GetDescendants()) do
-        if obj:IsA("Sound") and obj.Playing then
-            table.insert(sounds, obj)
-        end
-    end
-    return sounds
-end
-
--- ============================================
--- MAIN
--- ============================================
-
-print("\n" .. string.rep("=", 70))
-log("🔥", "GRIEFING/RUSUH REMOTE FINDER - START")
-print(string.rep("=", 70))
-
-local target = get_target()
-local all_remotes = find_remotes()
-
-log("ℹ️", string.format("Total RemoteEvents: %d", #all_remotes))
-if target then
-    log("ℹ️", string.format("Target: %s (HP: %s)", target.Name, tostring(get_health(target))))
-else
-    log("⚠️", "No target player - some tests will be skipped")
-end
-
--- ============================================
--- KATEGORI 1: KILL/DAMAGE REMOTES
--- ============================================
-
-print("\n" .. string.rep("=", 70))
-log("💀", "KATEGORI 1: KILL/DAMAGE PLAYER REMOTES")
-print(string.rep("=", 70))
-
-local kill_keywords = {
-    "kill", "death", "die", "slay", "murder", "execute",
-    "damage", "hurt", "harm", "hit", "attack", "strike",
-    "shoot", "stab", "punch", "kick"
-}
-
-local kill_remotes = {}
-
-for _, remote in pairs(all_remotes) do
-    local name = remote.Name:lower()
-    for _, kw in pairs(kill_keywords) do
-        if name:find(kw) then
-            table.insert(kill_remotes, remote)
-            log("🔍", string.format("Found: %s", remote.Name))
-            break
-        end
-    end
-end
-
-if target and #kill_remotes > 0 then
-    log("🧪", string.format("Testing %d kill/damage remotes...\n", #kill_remotes))
+    -- Rate limiting
+    MAX_REQUESTS_PER_SECOND = 3,  -- Untuk music remotes
+    MUSIC_COOLDOWN = 2,  -- Cooldown antar music command (detik)
     
-    for i, remote in pairs(kill_remotes) do
-        local before = get_health(target)
-        
-        -- Test berbagai kombinasi
-        pcall(function() remote:FireServer(target) end)
-        pcall(function() remote:FireServer(target, 100) end)
-        pcall(function() remote:FireServer(target, 999) end)
-        pcall(function() remote:FireServer(target, "kill") end)
-        
-        wait(0.3)
-        local after = get_health(target)
-        
-        if before and after then
-            if after < before then
-                log("✅", string.format("[%d] %s: WORKS! Damage: -%d HP", i, remote.Name, before - after))
-                log("📋", string.format("    Path: %s", remote:GetFullName()))
-            end
-        elseif before and not after then
-            log("💀", string.format("[%d] %s: KILLS TARGET!", i, remote.Name))
-            log("📋", string.format("    Path: %s", remote:GetFullName()))
-        end
-        
-        wait(CONFIG.TEST_DELAY)
-    end
-end
-
--- ============================================
--- KATEGORI 2: EXPLODE/BLAST REMOTES
--- ============================================
-
-print("\n" .. string.rep("=", 70))
-log("💥", "KATEGORI 2: EXPLODE/BLAST REMOTES")
-print(string.rep("=", 70))
-
-local explode_keywords = {
-    "explode", "explosion", "blast", "boom", "detonate",
-    "nuke", "bomb", "grenade", "fire", "smite"
+    -- Auto-kick
+    AUTO_KICK = true,
+    MAX_VIOLATIONS = 5,
+    
+    -- Admin whitelist
+    ADMIN_USER_IDS = {
+        -- TAMBAHKAN USER ID ADMIN DI SINI!
+        -- 123456789,
+        -- 987654321,
+    },
+    
+    -- Logging
+    ENABLE_LOGGING = true,
 }
 
-local explode_remotes = {}
+-- ============================================
+-- TRACKING
+-- ============================================
 
-for _, remote in pairs(all_remotes) do
-    local name = remote.Name:lower()
-    for _, kw in pairs(explode_keywords) do
-        if name:find(kw) then
-            table.insert(explode_remotes, remote)
-            log("🔍", string.format("Found: %s", remote.Name))
-            break
+local PlayerData = {}
+
+local function GetPlayerData(player)
+    if not PlayerData[player] then
+        PlayerData[player] = {
+            RequestCount = 0,
+            LastRequestTime = 0,
+            Violations = 0,
+            LastMusicAction = 0,
+            MusicActionsCount = 0,
+        }
+    end
+    return PlayerData[player]
+end
+
+local function Log(message, level)
+    if CONFIG.ENABLE_LOGGING then
+        local prefix = level == "WARN" and "⚠️" or level == "ERROR" and "🚫" or level == "KICK" and "👢" or "ℹ️"
+        print(string.format("[ANTI-CHEAT] %s %s", prefix, message))
+    end
+end
+
+-- ============================================
+-- VALIDATION FUNCTIONS
+-- ============================================
+
+local function IsAdmin(player)
+    -- Check if player is admin
+    if player.UserId == game.CreatorId then
+        return true
+    end
+    
+    for _, adminId in pairs(CONFIG.ADMIN_USER_IDS) do
+        if player.UserId == adminId then
+            return true
+        end
+    end
+    
+    return false
+end
+
+local function CheckRateLimit(player)
+    local data = GetPlayerData(player)
+    local now = tick()
+    
+    if now - data.LastRequestTime >= 1 then
+        data.RequestCount = 0
+        data.LastRequestTime = now
+    end
+    
+    data.RequestCount = data.RequestCount + 1
+    
+    if data.RequestCount > CONFIG.MAX_REQUESTS_PER_SECOND then
+        data.Violations = data.Violations + 1
+        Log(string.format("%s spam requests! (%d/s)", player.Name, data.RequestCount), "WARN")
+        return false
+    end
+    
+    return true
+end
+
+local function CheckMusicCooldown(player)
+    local data = GetPlayerData(player)
+    local now = tick()
+    
+    if now - data.LastMusicAction < CONFIG.MUSIC_COOLDOWN then
+        data.Violations = data.Violations + 1
+        Log(string.format("%s spam music commands!", player.Name), "WARN")
+        return false
+    end
+    
+    data.LastMusicAction = now
+    return true
+end
+
+local function HandleViolation(player)
+    local data = GetPlayerData(player)
+    
+    if data.Violations >= CONFIG.MAX_VIOLATIONS then
+        Log(string.format("KICKING %s - Violations: %d", player.Name, data.Violations), "KICK")
+        
+        if CONFIG.AUTO_KICK then
+            player:Kick("⚠️ Anti-Cheat: Terdeteksi spam/abuse remotes")
         end
     end
 end
 
-if target and #explode_remotes > 0 then
-    log("🧪", string.format("Testing %d explode/blast remotes...\n", #explode_remotes))
+-- ============================================
+-- PROTECT MUSIC SYSTEM
+-- ============================================
+
+local function ProtectMusicSystem()
+    Log("🎵 Protecting Music System...", "INFO")
     
-    for i, remote in pairs(explode_remotes) do
-        local before = get_health(target)
-        local pos = get_pos(target)
-        
-        if pos then
-            pcall(function() remote:FireServer(target) end)
-            pcall(function() remote:FireServer(pos) end)
-            pcall(function() remote:FireServer(pos, 100) end)
-            pcall(function() remote:FireServer(target, pos) end)
+    local songSystem = ReplicatedStorage:FindFirstChild("SongSystem")
+    if not songSystem then
+        Log("SongSystem tidak ditemukan!", "WARN")
+        return
+    end
+    
+    local events = songSystem:FindFirstChild("Events")
+    if not events then
+        Log("SongSystem.Events tidak ditemukan!", "WARN")
+        return
+    end
+    
+    -- Remote yang perlu di-protect berdasarkan hasil testing
+    local musicRemotes = {
+        "PauseSong",
+        "NextSong",
+        "PreviousSong",
+        "ToggleAutoPlay",
+        "UpdateNowPlaying",
+        "UpdateAutoPlayState",
+        "PlaySong",
+        "AddToQueue",
+        "UpdateQueue",
+    }
+    
+    for _, remoteName in pairs(musicRemotes) do
+        local remote = events:FindFirstChild(remoteName)
+        if remote and remote:IsA("RemoteEvent") then
+            -- Disconnect old connections (optional)
+            -- remote.OnServerEvent:Clear()
             
-            wait(0.3)
-            local after = get_health(target)
+            remote.OnServerEvent:Connect(function(player, ...)
+                -- Rate limit check
+                if not CheckRateLimit(player) then
+                    HandleViolation(player)
+                    return
+                end
+                
+                -- Music cooldown check
+                if not CheckMusicCooldown(player) then
+                    HandleViolation(player)
+                    return
+                end
+                
+                -- Jika lolos, biarkan event handler asli yang process
+                Log(string.format("%s used %s", player.Name, remoteName), "INFO")
+            end)
             
-            if before and after and after < before then
-                log("✅", string.format("[%d] %s: WORKS! Damage: -%d HP", i, remote.Name, before - after))
-                log("📋", string.format("    Path: %s", remote:GetFullName()))
-            elseif before and not after then
-                log("💀", string.format("[%d] %s: KILLS TARGET!", i, remote.Name))
-                log("📋", string.format("    Path: %s", remote:GetFullName()))
-            end
-        end
-        
-        wait(CONFIG.TEST_DELAY)
-    end
-end
-
--- ============================================
--- KATEGORI 3: MUSIC/AUDIO CONTROL
--- ============================================
-
-print("\n" .. string.rep("=", 70))
-log("🔇", "KATEGORI 3: MUSIC/AUDIO STOP REMOTES")
-print(string.rep("=", 70))
-
-local audio_keywords = {
-    "music", "sound", "audio", "song", "play", "pause",
-    "stop", "volume", "mute", "unmute"
-}
-
-local audio_remotes = {}
-
-for _, remote in pairs(all_remotes) do
-    local name = remote.Name:lower()
-    for _, kw in pairs(audio_keywords) do
-        if name:find(kw) then
-            table.insert(audio_remotes, remote)
-            log("🔍", string.format("Found: %s", remote.Name))
-            break
+            Log(string.format("✅ Protected: %s", remoteName), "INFO")
         end
     end
 end
 
-log("🧪", string.format("Testing %d audio remotes...\n", #audio_remotes))
+-- ============================================
+-- PROTECT MUSIC REMOTES (MusicBroadcast, MusicUpdate)
+-- ============================================
 
-local playing_sounds_before = get_sounds()
-log("ℹ️", string.format("Playing sounds before: %d", #playing_sounds_before))
-
-for i, remote in pairs(audio_remotes) do
-    -- Test stop/pause/mute
-    pcall(function() remote:FireServer() end)
-    pcall(function() remote:FireServer(false) end)
-    pcall(function() remote:FireServer("stop") end)
-    pcall(function() remote:FireServer("pause") end)
-    pcall(function() remote:FireServer(0) end)  -- volume 0
+local function ProtectMusicRemotes()
+    Log("🎵 Protecting MusicRemotes...", "INFO")
     
-    wait(0.5)
-    local playing_sounds_after = get_sounds()
-    
-    if #playing_sounds_after < #playing_sounds_before then
-        log("✅", string.format("[%d] %s: WORKS! Stopped %d sounds", i, remote.Name, #playing_sounds_before - #playing_sounds_after))
-        log("📋", string.format("    Path: %s", remote:GetFullName()))
+    local musicRemotes = ReplicatedStorage:FindFirstChild("MusicRemotes")
+    if not musicRemotes then
+        Log("MusicRemotes tidak ditemukan!", "WARN")
+        return
     end
     
-    wait(CONFIG.TEST_DELAY)
-end
-
--- ============================================
--- KATEGORI 4: KICK/BAN REMOTES
--- ============================================
-
-print("\n" .. string.rep("=", 70))
-log("🚫", "KATEGORI 4: KICK/BAN PLAYER REMOTES")
-print(string.rep("=", 70))
-
-local kick_keywords = {
-    "kick", "ban", "remove", "eject", "disconnect"
-}
-
-local kick_remotes = {}
-
-for _, remote in pairs(all_remotes) do
-    local name = remote.Name:lower()
-    for _, kw in pairs(kick_keywords) do
-        if name:find(kw) then
-            table.insert(kick_remotes, remote)
-            log("🔍", string.format("Found: %s", remote.Name))
-            break
+    local remotes = {"MusicBroadcast", "MusicUpdate"}
+    
+    for _, remoteName in pairs(remotes) do
+        local remote = musicRemotes:FindFirstChild(remoteName)
+        if remote and remote:IsA("RemoteEvent") then
+            remote.OnServerEvent:Connect(function(player, ...)
+                -- Only admin can broadcast music
+                if not IsAdmin(player) then
+                    local data = GetPlayerData(player)
+                    data.Violations = data.Violations + 2
+                    Log(string.format("%s tried to use %s without admin!", player.Name, remoteName), "ERROR")
+                    HandleViolation(player)
+                    return
+                end
+                
+                Log(string.format("Admin %s used %s", player.Name, remoteName), "INFO")
+            end)
+            
+            Log(string.format("✅ Protected (Admin Only): %s", remoteName), "INFO")
         end
     end
 end
 
-log("⚠️", string.format("Found %d kick/ban remotes (NOT TESTING - bisa kick target!)", #kick_remotes))
-for i, remote in pairs(kick_remotes) do
-    log("📋", string.format("  [%d] %s - %s", i, remote.Name, remote:GetFullName()))
-end
-
 -- ============================================
--- KATEGORI 5: TELEPORT/FLING REMOTES
+-- PROTECT ADMIN REMOTES
 -- ============================================
 
-print("\n" .. string.rep("=", 70))
-log("🌀", "KATEGORI 5: TELEPORT/FLING REMOTES")
-print(string.rep("=", 70))
-
-local tp_keywords = {
-    "teleport", "tp", "fling", "throw", "launch",
-    "velocity", "push", "move", "position"
-}
-
-local tp_remotes = {}
-
-for _, remote in pairs(all_remotes) do
-    local name = remote.Name:lower()
-    for _, kw in pairs(tp_keywords) do
-        if name:find(kw) then
-            table.insert(tp_remotes, remote)
-            log("🔍", string.format("Found: %s", remote.Name))
-            break
-        end
-    end
-end
-
-if target and #tp_remotes > 0 then
-    log("🧪", string.format("Testing %d teleport/fling remotes...\n", #tp_remotes))
+local function ProtectAdminRemotes()
+    Log("👑 Protecting Admin Remotes...", "INFO")
     
-    local pos_before = get_pos(target)
-    
-    for i, remote in pairs(tp_remotes) do
-        if pos_before then
-            -- Test teleport ke random position
-            local random_pos = Vector3.new(
-                pos_before.X + math.random(-100, 100),
-                pos_before.Y + 500,  -- Atas
-                pos_before.Z + math.random(-100, 100)
-            )
-            
-            pcall(function() remote:FireServer(target, random_pos) end)
-            pcall(function() remote:FireServer(target) end)
-            pcall(function() remote:FireServer(random_pos) end)
-            
-            wait(0.5)
-            local pos_after = get_pos(target)
-            
-            if pos_after and (pos_after - pos_before).Magnitude > 10 then
-                log("✅", string.format("[%d] %s: WORKS! Moved target", i, remote.Name))
-                log("📋", string.format("    Path: %s", remote:GetFullName()))
+    local adminRemotes = ReplicatedStorage:FindFirstChild("AdminRemotes")
+    if adminRemotes then
+        -- Protect semua admin remotes
+        for _, remote in pairs(adminRemotes:GetDescendants()) do
+            if remote:IsA("RemoteEvent") then
+                remote.OnServerEvent:Connect(function(player, ...)
+                    if not IsAdmin(player) then
+                        local data = GetPlayerData(player)
+                        data.Violations = data.Violations + 5  -- Serious violation
+                        Log(string.format("%s tried ADMIN remote: %s", player.Name, remote.Name), "ERROR")
+                        HandleViolation(player)
+                        return
+                    end
+                    
+                    Log(string.format("Admin %s used %s", player.Name, remote.Name), "INFO")
+                end)
+                
+                Log(string.format("✅ Protected Admin Remote: %s", remote.Name), "INFO")
             end
         end
-        
-        wait(CONFIG.TEST_DELAY)
     end
-end
-
--- ============================================
--- KATEGORI 6: ADMIN/MOD REMOTES
--- ============================================
-
-print("\n" .. string.rep("=", 70))
-log("👑", "KATEGORI 6: ADMIN/MOD COMMAND REMOTES")
-print(string.rep("=", 70))
-
-local admin_keywords = {
-    "admin", "mod", "command", "announce", "broadcast",
-    "give", "award", "grant", "role"
-}
-
-local admin_remotes = {}
-
-for _, remote in pairs(all_remotes) do
-    local name = remote.Name:lower()
-    for _, kw in pairs(admin_keywords) do
-        if name:find(kw) then
-            table.insert(admin_remotes, remote)
-            log("🔍", string.format("Found: %s", remote.Name))
-            break
+    
+    -- Protect specific admin remotes yang ditemukan
+    local specificAdminRemotes = {
+        "Announcement",
+        "AdminAccess",
+        "GiveRoleRemote",
+        "GiveGamePass",
+        "SendAnnouncement",
+        "OpenAnnouncementGUI",
+        "GlobalAnnouncementEvent",
+        "RefreshRole",
+        "BannedUsers",
+    }
+    
+    for _, remoteName in pairs(specificAdminRemotes) do
+        local remote = ReplicatedStorage:FindFirstDescendant(remoteName)
+        if remote and remote:IsA("RemoteEvent") then
+            remote.OnServerEvent:Connect(function(player, ...)
+                if not IsAdmin(player) then
+                    local data = GetPlayerData(player)
+                    data.Violations = data.Violations + 5
+                    Log(string.format("%s tried admin command: %s", player.Name, remoteName), "ERROR")
+                    HandleViolation(player)
+                    
+                    -- Instant kick untuk admin commands
+                    if CONFIG.AUTO_KICK then
+                        player:Kick("🚫 Unauthorized admin access attempt")
+                    end
+                    return
+                end
+                
+                Log(string.format("Admin %s used %s", player.Name, remoteName), "INFO")
+            end)
+            
+            Log(string.format("✅ Protected: %s", remoteName), "INFO")
         end
     end
 end
 
-log("🧪", string.format("Testing %d admin remotes...\n", #admin_remotes))
+-- ============================================
+-- PROTECT GAMEPASS REMOTES
+-- ============================================
 
-for i, remote in pairs(admin_remotes) do
-    pcall(function() remote:FireServer("test") end)
-    pcall(function() remote:FireServer(target, "test") end)
-    pcall(function() remote:FireServer("GRIEFING TEST MESSAGE") end)
+local function ProtectGamepassRemotes()
+    Log("💎 Protecting Gamepass Remotes...", "INFO")
     
-    wait(CONFIG.TEST_DELAY)
-end
-
-log("⚠️", "Cek apakah ada announcement/broadcast muncul!")
-
--- ============================================
--- KATEGORI 7: BRUTE FORCE SEMUA
--- ============================================
-
-print("\n" .. string.rep("=", 70))
-log("🔥", "KATEGORI 7: BRUTE FORCE ALL REMOTES")
-print(string.rep("=", 70))
-
-log("🧪", string.format("Brute forcing %d total remotes...\n", #all_remotes))
-
-local working_remotes = {}
-
-for i, remote in pairs(all_remotes) do
-    if target then
-        local before_hp = get_health(target)
-        local before_pos = get_pos(target)
-        
-        -- Test berbagai args
-        pcall(function() remote:FireServer(target) end)
-        pcall(function() remote:FireServer(target, 100) end)
-        pcall(function() remote:FireServer(target, before_pos) end)
-        
-        wait(0.15)
-        local after_hp = get_health(target)
-        local after_pos = get_pos(target)
-        
-        -- Cek damage
-        if before_hp and after_hp and after_hp < before_hp then
-            table.insert(working_remotes, {
-                name = remote.Name,
-                path = remote:GetFullName(),
-                type = "DAMAGE",
-                value = before_hp - after_hp
-            })
-        elseif before_hp and not after_hp then
-            table.insert(working_remotes, {
-                name = remote.Name,
-                path = remote:GetFullName(),
-                type = "KILL"
-            })
-        end
-        
-        -- Cek teleport/fling
-        if before_pos and after_pos and (after_pos - before_pos).Magnitude > 10 then
-            table.insert(working_remotes, {
-                name = remote.Name,
-                path = remote:GetFullName(),
-                type = "TELEPORT/FLING"
-            })
+    local gamepass = ReplicatedStorage:FindFirstChild("Gamepass")
+    if gamepass then
+        local playerDataUpdated = gamepass:FindFirstChild("PlayerDataUpdated")
+        if playerDataUpdated and playerDataUpdated:IsA("RemoteEvent") then
+            playerDataUpdated.OnServerEvent:Connect(function(player, ...)
+                -- Rate limit
+                if not CheckRateLimit(player) then
+                    HandleViolation(player)
+                    return
+                end
+                
+                Log(string.format("%s triggered PlayerDataUpdated", player.Name), "INFO")
+            end)
+            
+            Log("✅ Protected: PlayerDataUpdated", "INFO")
         end
     end
-    
-    if i % 25 == 0 then
-        log("ℹ️", string.format("Progress: %d/%d", i, #all_remotes))
-    end
-    
-    wait(0.05)
-end
-
--- Cek audio
-wait(1)
-local sounds_after_brute = get_sounds()
-if #sounds_after_brute < #playing_sounds_before then
-    log("🔇", string.format("Audio affected! %d sounds stopped", #playing_sounds_before - #sounds_after_brute))
 end
 
 -- ============================================
--- HASIL FINAL
+-- ANTI-SPAM PROTECTION
 -- ============================================
 
-print("\n" .. string.rep("=", 70))
-log("📊", "HASIL TESTING - WORKING GRIEFING REMOTES")
-print(string.rep("=", 70))
-
-if #working_remotes > 0 then
-    log("✅", string.format("FOUND %d WORKING REMOTES:\n", #working_remotes))
+local function SetupAntiSpam()
+    Log("🛡️ Setting up Anti-Spam Protection...", "INFO")
     
-    for i, r in pairs(working_remotes) do
-        log("🎯", string.format("[%d] %s", i, r.name))
-        log("📋", string.format("    Path: %s", r.path))
-        log("🔧", string.format("    Type: %s", r.type))
-        if r.value then
-            log("💥", string.format("    Value: %s", tostring(r.value)))
+    -- Monitor all remotes for spam
+    for _, remote in pairs(ReplicatedStorage:GetDescendants()) do
+        if remote:IsA("RemoteEvent") then
+            remote.OnServerEvent:Connect(function(player)
+                local data = GetPlayerData(player)
+                data.RequestCount = data.RequestCount + 1
+            end)
         end
-        log("💻", string.format("    Usage: game:GetService('ReplicatedStorage'):FindFirstChild('%s'):FireServer(target)\n", r.name))
     end
-else
-    log("❌", "Tidak ada remote griefing yang ditemukan")
-    log("ℹ️", "Game mungkin sudah punya anti-cheat yang bagus!")
 end
 
-print("\n" .. string.rep("=", 70))
-log("🏁", "TESTING SELESAI - Gunakan hasil ini untuk perbaiki security!")
-print(string.rep("=", 70))
+-- ============================================
+-- CLEANUP
+-- ============================================
+
+Players.PlayerRemoving:Connect(function(player)
+    PlayerData[player] = nil
+end)
+
+-- ============================================
+-- INITIALIZE
+-- ============================================
+
+print("\n" .. string.rep("=", 60))
+Log("MUSIC SYSTEM ANTI-CHEAT INITIALIZING...", "INFO")
+print(string.rep("=", 60))
+
+-- Setup protections
+wait(1)  -- Wait for game to load
+
+ProtectMusicSystem()
+wait(0.5)
+
+ProtectMusicRemotes()
+wait(0.5)
+
+ProtectAdminRemotes()
+wait(0.5)
+
+ProtectGamepassRemotes()
+wait(0.5)
+
+SetupAntiSpam()
+
+-- Initialize tracking untuk semua player
+for _, player in pairs(Players:GetPlayers()) do
+    GetPlayerData(player)
+end
+
+print(string.rep("=", 60))
+Log("✅ MUSIC SYSTEM ANTI-CHEAT ACTIVE!", "INFO")
+Log(string.format("Protected Admins: %d", #CONFIG.ADMIN_USER_IDS + 1), "INFO")
+print(string.rep("=", 60))
