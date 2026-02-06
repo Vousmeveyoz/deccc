@@ -1,29 +1,485 @@
-– This function creates a TextButton that explodes the player when clicked.
-– @param player: The player who clicked the button.
-local function explodePlayer(player)
-    – Check if the player is valid and alive.
-    if player and player.Character and player.Character:FindFirstChild(“Humanoid”) and player.Character.Humanoid.Health > 0 then
-        – Create an explosion at the player’s position.
-        local explosion = Instance.new(“Explosion”)
-        explosion.Position = player.Character.HumanoidRootPart.Position
-        explosion.Parent = workspace
-    -- Set the player's health to zero to simulate an explosion.
-    player.Character.Humanoid.Health = 0
+--[[
+    GRIEFING/RUSUH REMOTE FINDER
+    Cari remote yang biasa dipake buat:
+    - Kill/Damage player
+    - Explode/Blast player
+    - Stop/Destroy music/audio
+    - Kick/Ban player
+    - Teleport/Fling player
+    - Destroy map/objects
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local SoundService = game:GetService("SoundService")
+local LocalPlayer = Players.LocalPlayer
+
+-- ============================================
+-- CONFIG
+-- ============================================
+
+local CONFIG = {
+    TARGET = "",  -- Username target atau kosongkan
+    TEST_DELAY = 0.1,
+    AUTO_TEST_ALL = true,  -- Otomatis test semua kategori
+}
+
+-- ============================================
+-- UTILS
+-- ============================================
+
+local function log(icon, msg)
+    print(string.format("[%s] %s", icon, msg))
 end
 
+local function get_target()
+    if CONFIG.TARGET ~= "" then
+        return Players:FindFirstChild(CONFIG.TARGET)
+    end
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then return p end
+    end
+    return nil
 end
-– Create a ScreenGui to hold the TextButton.
-local screenGui = Instance.new(“ScreenGui”)
-screenGui.Parent = game:GetService(“StarterGui”)
-– Create a TextButton inside the ScreenGui.
-local textButton = Instance.new(“TextButton”)
-textButton.Text = “Explode”
-textButton.Size = UDim2.new(0, 200, 0, 50)
-textButton.Position = UDim2.new(0.5, -100, 0.5, -25)
-textButton.Parent = screenGui
-– Connect the explodePlayer function to the TextButton’s MouseButton1Click event.
-textButton.MouseButton1Click:Connect(function()
-    – Get the player who clicked the button.
-    local player = game.Players.LocalPlayer
-    explodePlayer(player)
-end)
+
+local function get_health(p)
+    if not p or not p.Character then return nil end
+    local h = p.Character:FindFirstChild("Humanoid")
+    return h and h.Health or nil
+end
+
+local function get_pos(p)
+    if not p or not p.Character then return nil end
+    local h = p.Character:FindFirstChild("HumanoidRootPart")
+    return h and h.Position or nil
+end
+
+local function find_remotes()
+    local remotes = {}
+    for _, obj in pairs(ReplicatedStorage:GetDescendants()) do
+        if obj:IsA("RemoteEvent") then
+            table.insert(remotes, obj)
+        end
+    end
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("RemoteEvent") then
+            table.insert(remotes, obj)
+        end
+    end
+    return remotes
+end
+
+local function get_sounds()
+    local sounds = {}
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Sound") and obj.Playing then
+            table.insert(sounds, obj)
+        end
+    end
+    for _, obj in pairs(SoundService:GetDescendants()) do
+        if obj:IsA("Sound") and obj.Playing then
+            table.insert(sounds, obj)
+        end
+    end
+    return sounds
+end
+
+-- ============================================
+-- MAIN
+-- ============================================
+
+print("\n" .. string.rep("=", 70))
+log("🔥", "GRIEFING/RUSUH REMOTE FINDER - START")
+print(string.rep("=", 70))
+
+local target = get_target()
+local all_remotes = find_remotes()
+
+log("ℹ️", string.format("Total RemoteEvents: %d", #all_remotes))
+if target then
+    log("ℹ️", string.format("Target: %s (HP: %s)", target.Name, tostring(get_health(target))))
+else
+    log("⚠️", "No target player - some tests will be skipped")
+end
+
+-- ============================================
+-- KATEGORI 1: KILL/DAMAGE REMOTES
+-- ============================================
+
+print("\n" .. string.rep("=", 70))
+log("💀", "KATEGORI 1: KILL/DAMAGE PLAYER REMOTES")
+print(string.rep("=", 70))
+
+local kill_keywords = {
+    "kill", "death", "die", "slay", "murder", "execute",
+    "damage", "hurt", "harm", "hit", "attack", "strike",
+    "shoot", "stab", "punch", "kick"
+}
+
+local kill_remotes = {}
+
+for _, remote in pairs(all_remotes) do
+    local name = remote.Name:lower()
+    for _, kw in pairs(kill_keywords) do
+        if name:find(kw) then
+            table.insert(kill_remotes, remote)
+            log("🔍", string.format("Found: %s", remote.Name))
+            break
+        end
+    end
+end
+
+if target and #kill_remotes > 0 then
+    log("🧪", string.format("Testing %d kill/damage remotes...\n", #kill_remotes))
+    
+    for i, remote in pairs(kill_remotes) do
+        local before = get_health(target)
+        
+        -- Test berbagai kombinasi
+        pcall(function() remote:FireServer(target) end)
+        pcall(function() remote:FireServer(target, 100) end)
+        pcall(function() remote:FireServer(target, 999) end)
+        pcall(function() remote:FireServer(target, "kill") end)
+        
+        wait(0.3)
+        local after = get_health(target)
+        
+        if before and after then
+            if after < before then
+                log("✅", string.format("[%d] %s: WORKS! Damage: -%d HP", i, remote.Name, before - after))
+                log("📋", string.format("    Path: %s", remote:GetFullName()))
+            end
+        elseif before and not after then
+            log("💀", string.format("[%d] %s: KILLS TARGET!", i, remote.Name))
+            log("📋", string.format("    Path: %s", remote:GetFullName()))
+        end
+        
+        wait(CONFIG.TEST_DELAY)
+    end
+end
+
+-- ============================================
+-- KATEGORI 2: EXPLODE/BLAST REMOTES
+-- ============================================
+
+print("\n" .. string.rep("=", 70))
+log("💥", "KATEGORI 2: EXPLODE/BLAST REMOTES")
+print(string.rep("=", 70))
+
+local explode_keywords = {
+    "explode", "explosion", "blast", "boom", "detonate",
+    "nuke", "bomb", "grenade", "fire", "smite"
+}
+
+local explode_remotes = {}
+
+for _, remote in pairs(all_remotes) do
+    local name = remote.Name:lower()
+    for _, kw in pairs(explode_keywords) do
+        if name:find(kw) then
+            table.insert(explode_remotes, remote)
+            log("🔍", string.format("Found: %s", remote.Name))
+            break
+        end
+    end
+end
+
+if target and #explode_remotes > 0 then
+    log("🧪", string.format("Testing %d explode/blast remotes...\n", #explode_remotes))
+    
+    for i, remote in pairs(explode_remotes) do
+        local before = get_health(target)
+        local pos = get_pos(target)
+        
+        if pos then
+            pcall(function() remote:FireServer(target) end)
+            pcall(function() remote:FireServer(pos) end)
+            pcall(function() remote:FireServer(pos, 100) end)
+            pcall(function() remote:FireServer(target, pos) end)
+            
+            wait(0.3)
+            local after = get_health(target)
+            
+            if before and after and after < before then
+                log("✅", string.format("[%d] %s: WORKS! Damage: -%d HP", i, remote.Name, before - after))
+                log("📋", string.format("    Path: %s", remote:GetFullName()))
+            elseif before and not after then
+                log("💀", string.format("[%d] %s: KILLS TARGET!", i, remote.Name))
+                log("📋", string.format("    Path: %s", remote:GetFullName()))
+            end
+        end
+        
+        wait(CONFIG.TEST_DELAY)
+    end
+end
+
+-- ============================================
+-- KATEGORI 3: MUSIC/AUDIO CONTROL
+-- ============================================
+
+print("\n" .. string.rep("=", 70))
+log("🔇", "KATEGORI 3: MUSIC/AUDIO STOP REMOTES")
+print(string.rep("=", 70))
+
+local audio_keywords = {
+    "music", "sound", "audio", "song", "play", "pause",
+    "stop", "volume", "mute", "unmute"
+}
+
+local audio_remotes = {}
+
+for _, remote in pairs(all_remotes) do
+    local name = remote.Name:lower()
+    for _, kw in pairs(audio_keywords) do
+        if name:find(kw) then
+            table.insert(audio_remotes, remote)
+            log("🔍", string.format("Found: %s", remote.Name))
+            break
+        end
+    end
+end
+
+log("🧪", string.format("Testing %d audio remotes...\n", #audio_remotes))
+
+local playing_sounds_before = get_sounds()
+log("ℹ️", string.format("Playing sounds before: %d", #playing_sounds_before))
+
+for i, remote in pairs(audio_remotes) do
+    -- Test stop/pause/mute
+    pcall(function() remote:FireServer() end)
+    pcall(function() remote:FireServer(false) end)
+    pcall(function() remote:FireServer("stop") end)
+    pcall(function() remote:FireServer("pause") end)
+    pcall(function() remote:FireServer(0) end)  -- volume 0
+    
+    wait(0.5)
+    local playing_sounds_after = get_sounds()
+    
+    if #playing_sounds_after < #playing_sounds_before then
+        log("✅", string.format("[%d] %s: WORKS! Stopped %d sounds", i, remote.Name, #playing_sounds_before - #playing_sounds_after))
+        log("📋", string.format("    Path: %s", remote:GetFullName()))
+    end
+    
+    wait(CONFIG.TEST_DELAY)
+end
+
+-- ============================================
+-- KATEGORI 4: KICK/BAN REMOTES
+-- ============================================
+
+print("\n" .. string.rep("=", 70))
+log("🚫", "KATEGORI 4: KICK/BAN PLAYER REMOTES")
+print(string.rep("=", 70))
+
+local kick_keywords = {
+    "kick", "ban", "remove", "eject", "disconnect"
+}
+
+local kick_remotes = {}
+
+for _, remote in pairs(all_remotes) do
+    local name = remote.Name:lower()
+    for _, kw in pairs(kick_keywords) do
+        if name:find(kw) then
+            table.insert(kick_remotes, remote)
+            log("🔍", string.format("Found: %s", remote.Name))
+            break
+        end
+    end
+end
+
+log("⚠️", string.format("Found %d kick/ban remotes (NOT TESTING - bisa kick target!)", #kick_remotes))
+for i, remote in pairs(kick_remotes) do
+    log("📋", string.format("  [%d] %s - %s", i, remote.Name, remote:GetFullName()))
+end
+
+-- ============================================
+-- KATEGORI 5: TELEPORT/FLING REMOTES
+-- ============================================
+
+print("\n" .. string.rep("=", 70))
+log("🌀", "KATEGORI 5: TELEPORT/FLING REMOTES")
+print(string.rep("=", 70))
+
+local tp_keywords = {
+    "teleport", "tp", "fling", "throw", "launch",
+    "velocity", "push", "move", "position"
+}
+
+local tp_remotes = {}
+
+for _, remote in pairs(all_remotes) do
+    local name = remote.Name:lower()
+    for _, kw in pairs(tp_keywords) do
+        if name:find(kw) then
+            table.insert(tp_remotes, remote)
+            log("🔍", string.format("Found: %s", remote.Name))
+            break
+        end
+    end
+end
+
+if target and #tp_remotes > 0 then
+    log("🧪", string.format("Testing %d teleport/fling remotes...\n", #tp_remotes))
+    
+    local pos_before = get_pos(target)
+    
+    for i, remote in pairs(tp_remotes) do
+        if pos_before then
+            -- Test teleport ke random position
+            local random_pos = Vector3.new(
+                pos_before.X + math.random(-100, 100),
+                pos_before.Y + 500,  -- Atas
+                pos_before.Z + math.random(-100, 100)
+            )
+            
+            pcall(function() remote:FireServer(target, random_pos) end)
+            pcall(function() remote:FireServer(target) end)
+            pcall(function() remote:FireServer(random_pos) end)
+            
+            wait(0.5)
+            local pos_after = get_pos(target)
+            
+            if pos_after and (pos_after - pos_before).Magnitude > 10 then
+                log("✅", string.format("[%d] %s: WORKS! Moved target", i, remote.Name))
+                log("📋", string.format("    Path: %s", remote:GetFullName()))
+            end
+        end
+        
+        wait(CONFIG.TEST_DELAY)
+    end
+end
+
+-- ============================================
+-- KATEGORI 6: ADMIN/MOD REMOTES
+-- ============================================
+
+print("\n" .. string.rep("=", 70))
+log("👑", "KATEGORI 6: ADMIN/MOD COMMAND REMOTES")
+print(string.rep("=", 70))
+
+local admin_keywords = {
+    "admin", "mod", "command", "announce", "broadcast",
+    "give", "award", "grant", "role"
+}
+
+local admin_remotes = {}
+
+for _, remote in pairs(all_remotes) do
+    local name = remote.Name:lower()
+    for _, kw in pairs(admin_keywords) do
+        if name:find(kw) then
+            table.insert(admin_remotes, remote)
+            log("🔍", string.format("Found: %s", remote.Name))
+            break
+        end
+    end
+end
+
+log("🧪", string.format("Testing %d admin remotes...\n", #admin_remotes))
+
+for i, remote in pairs(admin_remotes) do
+    pcall(function() remote:FireServer("test") end)
+    pcall(function() remote:FireServer(target, "test") end)
+    pcall(function() remote:FireServer("GRIEFING TEST MESSAGE") end)
+    
+    wait(CONFIG.TEST_DELAY)
+end
+
+log("⚠️", "Cek apakah ada announcement/broadcast muncul!")
+
+-- ============================================
+-- KATEGORI 7: BRUTE FORCE SEMUA
+-- ============================================
+
+print("\n" .. string.rep("=", 70))
+log("🔥", "KATEGORI 7: BRUTE FORCE ALL REMOTES")
+print(string.rep("=", 70))
+
+log("🧪", string.format("Brute forcing %d total remotes...\n", #all_remotes))
+
+local working_remotes = {}
+
+for i, remote in pairs(all_remotes) do
+    if target then
+        local before_hp = get_health(target)
+        local before_pos = get_pos(target)
+        
+        -- Test berbagai args
+        pcall(function() remote:FireServer(target) end)
+        pcall(function() remote:FireServer(target, 100) end)
+        pcall(function() remote:FireServer(target, before_pos) end)
+        
+        wait(0.15)
+        local after_hp = get_health(target)
+        local after_pos = get_pos(target)
+        
+        -- Cek damage
+        if before_hp and after_hp and after_hp < before_hp then
+            table.insert(working_remotes, {
+                name = remote.Name,
+                path = remote:GetFullName(),
+                type = "DAMAGE",
+                value = before_hp - after_hp
+            })
+        elseif before_hp and not after_hp then
+            table.insert(working_remotes, {
+                name = remote.Name,
+                path = remote:GetFullName(),
+                type = "KILL"
+            })
+        end
+        
+        -- Cek teleport/fling
+        if before_pos and after_pos and (after_pos - before_pos).Magnitude > 10 then
+            table.insert(working_remotes, {
+                name = remote.Name,
+                path = remote:GetFullName(),
+                type = "TELEPORT/FLING"
+            })
+        end
+    end
+    
+    if i % 25 == 0 then
+        log("ℹ️", string.format("Progress: %d/%d", i, #all_remotes))
+    end
+    
+    wait(0.05)
+end
+
+-- Cek audio
+wait(1)
+local sounds_after_brute = get_sounds()
+if #sounds_after_brute < #playing_sounds_before then
+    log("🔇", string.format("Audio affected! %d sounds stopped", #playing_sounds_before - #sounds_after_brute))
+end
+
+-- ============================================
+-- HASIL FINAL
+-- ============================================
+
+print("\n" .. string.rep("=", 70))
+log("📊", "HASIL TESTING - WORKING GRIEFING REMOTES")
+print(string.rep("=", 70))
+
+if #working_remotes > 0 then
+    log("✅", string.format("FOUND %d WORKING REMOTES:\n", #working_remotes))
+    
+    for i, r in pairs(working_remotes) do
+        log("🎯", string.format("[%d] %s", i, r.name))
+        log("📋", string.format("    Path: %s", r.path))
+        log("🔧", string.format("    Type: %s", r.type))
+        if r.value then
+            log("💥", string.format("    Value: %s", tostring(r.value)))
+        end
+        log("💻", string.format("    Usage: game:GetService('ReplicatedStorage'):FindFirstChild('%s'):FireServer(target)\n", r.name))
+    end
+else
+    log("❌", "Tidak ada remote griefing yang ditemukan")
+    log("ℹ️", "Game mungkin sudah punya anti-cheat yang bagus!")
+end
+
+print("\n" .. string.rep("=", 70))
+log("🏁", "TESTING SELESAI - Gunakan hasil ini untuk perbaiki security!")
+print(string.rep("=", 70))
